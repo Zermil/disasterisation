@@ -1,0 +1,14 @@
+build/*
+*.obj
+*.exe
+*.ilk
+*.pdb
+*.txt
+*.ini
+
+!build/.gitkeep
+!build/SDL2.dll
+
+!LICENSE.txt
+!README.txt
+!COPYING.txt
