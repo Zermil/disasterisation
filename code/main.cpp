@@ -4,10 +4,7 @@
 
 #include <SDL2/SDL.h>
 
-// @ToDo: Add more fill rules to see how they work on different shapes.
-
 #define UNUSED(x) ((void)(x))
-
 #define ERROR_EXIT(err, msg, ...)                   \
     do {                                            \
         if ((err)) {                                \
@@ -15,18 +12,19 @@
             exit(1);                                \
         }                                           \
     } while(0)                                      \
-
+        
 #define ARRAY_LEN(arr) (sizeof(arr)/sizeof(arr[0]))
 #define ARRAY_AT(arr, row, col) ((arr)[RECT_COLS * (row) + (col)])
 #define IGNORE_DECIMAL(x) ((f32)((s32)(x)))
 
+#define FPS 60
+#define MS_PER_FRAME (1000/FPS)
 #define WIDTH 1280
 #define HEIGHT 720
 
 #define RECT_RES 40
 #define RECT_ROWS (WIDTH / RECT_RES)
 #define RECT_COLS (HEIGHT / RECT_RES)
-
 #define CIRCLE_RADIUS 20
 
 #define internal static
@@ -106,7 +104,8 @@ internal void rasterize_shape(Line *lines, size_t lines_length, SDL_Rect *rects,
             rect.w = rect.h = RECT_RES;
             rect.x = row * rect.w;
             rect.y = col * rect.h;
-
+            
+            // @ToDo: Add more fill rules to see how they work on different shapes.w
             if (line_check_intersections(lines, lines_length, other) % 2 != 0) {
                 ARRAY_AT(filled_rects, row, col) = rect;
                 ARRAY_AT(rects, row, col) = {0};
@@ -208,10 +207,16 @@ int main(int argc, char **argv)
     
     Render_Ctx context = create_render_context(WIDTH, HEIGHT, "A Window");
     bool should_quit = false;
-
+    u32 current_time = 0;
+    u32 previous_time = SDL_GetTicks();
+    
     while (!should_quit) {
+        current_time = SDL_GetTicks();
+        u32 time_elapsed = current_time - previous_time;
+        u32 time_to_wait = MS_PER_FRAME - time_elapsed;
+        previous_time = current_time;
+        
         SDL_Event e = {0};
-
         while (SDL_PollEvent(&e)) {
             switch (e.type) {
                 case SDL_QUIT: {
@@ -237,7 +242,7 @@ int main(int argc, char **argv)
                         f32 x = IGNORE_DECIMAL(((f32) e.motion.x / (f32) WIDTH) * RECT_ROWS);
                         f32 y = IGNORE_DECIMAL(((f32) e.motion.y / (f32) HEIGHT) * RECT_COLS);
                         
-                        // @Note: Simple way to loop back when line_index = -1.
+                        // @Note: Simple way to loop back when line_index = 0.
                         s32 connected_line_index = line_index - 1 == -1 ? ARRAY_LEN(lines) - 1 : line_index - 1;
                         
                         lines[line_index].p0.x = x;
@@ -276,6 +281,9 @@ int main(int argc, char **argv)
         }
 
         SDL_RenderPresent(context.renderer);
+        if (time_to_wait > 0 && time_to_wait < MS_PER_FRAME) {
+            SDL_Delay(time_to_wait);
+        }
     }
 
     destroy_render_context(&context);
