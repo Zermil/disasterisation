@@ -174,6 +174,8 @@ internal Render_Ctx create_render_context(u32 width, u32 height, const char *win
     context.renderer = SDL_CreateRenderer(context.window, -1, SDL_RENDERER_ACCELERATED);
     ERROR_EXIT(context.renderer == 0, "[ERROR]: Could not create SDL2 renderer");
 
+    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+    
     return(context);
 }
 
