@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <SDL2/SDL.h>
 
@@ -64,10 +65,10 @@ internal inline Vec2f vec2f_get_direction(Line line)
     };
 }
 
-internal u32 line_check_intersections(Line *lines, size_t len, Line other)
+internal u32 line_check_intersections(Line *lines, size_t length, Line other)
 {
     u32 intersections = 0;
-    for (size_t i = 0; i < len; ++i) {
+    for (size_t i = 0; i < length; ++i) {
         Vec2f As = lines[i].p0;
         Vec2f Ad = vec2f_get_direction(lines[i]);
 
@@ -92,26 +93,28 @@ internal u32 line_check_intersections(Line *lines, size_t len, Line other)
     return(intersections);
 }
 
-internal void rasterize_shape(Line *lines, size_t lines_length, SDL_Rect *rects, SDL_Rect *filled_rects)
+internal void rasterize_shape(Line *lines, size_t length, SDL_Rect *rects, SDL_Rect *filled_rects)
 {
+    memset(rects, 0, RECT_ROWS*RECT_COLS*sizeof(SDL_Rect));
+    memset(filled_rects, 0, RECT_ROWS*RECT_COLS*sizeof(SDL_Rect));
+    
+    SDL_Rect rect = {0};
+    rect.w = rect.h = RECT_RES;
+    
     for (u32 row = 0; row < RECT_ROWS; ++row) {
         for (u32 col = 0; col < RECT_COLS; ++col) {
             f32 x = row + 0.5f;
             f32 y = col + 0.5f;
             Line other = {{x, y}, {x - 1.0f, y}};
             
-            SDL_Rect rect = {0};
-            rect.w = rect.h = RECT_RES;
-            rect.x = row * rect.w;
             rect.y = col * rect.h;
-            
+            rect.x = row * rect.w;
+                        
             // @ToDo: Add more fill rules to see how they work on different shapes.
-            if (line_check_intersections(lines, lines_length, other) % 2 != 0) {
+            if (line_check_intersections(lines, length, other) % 2 != 0) {
                 ARRAY_AT(filled_rects, row, col) = rect;
-                ARRAY_AT(rects, row, col) = {0};
             } else {
                 ARRAY_AT(rects, row, col) = rect;
-                ARRAY_AT(filled_rects, row, col) = {0};
             }
         }
     }
@@ -205,7 +208,7 @@ int main(int argc, char **argv)
     lines[0].p1 = {lines[1].p0.x, lines[1].p0.y};
     lines[1].p1 = {lines[2].p0.x, lines[2].p0.y};
     lines[2].p1 = {lines[0].p0.x, lines[0].p0.y};
-
+    
     rasterize_shape(lines, ARRAY_LEN(lines), rects, filled_rects);
     
     Render_Ctx context = create_render_context(WIDTH, HEIGHT, "A Window");
