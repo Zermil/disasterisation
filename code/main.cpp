@@ -105,7 +105,7 @@ internal void rasterize_shape(Line *lines, size_t lines_length, SDL_Rect *rects,
             rect.x = row * rect.w;
             rect.y = col * rect.h;
             
-            // @ToDo: Add more fill rules to see how they work on different shapes.w
+            // @ToDo: Add more fill rules to see how they work on different shapes.
             if (line_check_intersections(lines, lines_length, other) % 2 != 0) {
                 ARRAY_AT(filled_rects, row, col) = rect;
                 ARRAY_AT(rects, row, col) = {0};
@@ -117,17 +117,18 @@ internal void rasterize_shape(Line *lines, size_t lines_length, SDL_Rect *rects,
     }
 }
 
-// @Speed: Maybe instead of creating rectangles constantly, we hold them somwhere precomputed?
-// or just change boundary check for something hand-written.
-internal s32 handle_moving_lines(s32 mouse_x, s32 mouse_y, Line *lines, s32 length)
+internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line *lines, s32 length)
 {
-    const SDL_Point mouse = { mouse_x, mouse_y };
     for (s32 i = 0; i < length; ++i) {
-        const s32 x = (s32) (lines[i].p0.x * RECT_RES) - CIRCLE_RADIUS;
-        const s32 y = (s32) (lines[i].p0.y * RECT_RES) - CIRCLE_RADIUS;
-        const SDL_Rect rect = {x, y, 2*CIRCLE_RADIUS, 2*CIRCLE_RADIUS};
+        s32 x = (s32) (lines[i].p0.x * RECT_RES) - CIRCLE_RADIUS;
+        s32 y = (s32) (lines[i].p0.y * RECT_RES) - CIRCLE_RADIUS;
+        s32 w = 2*CIRCLE_RADIUS;
         
-        if (SDL_PointInRect(&mouse, &rect)) return(i);
+        if ((mouse_x >= x && mouse_x <= x + w) &&
+            (mouse_y >= y && mouse_y <= y + w))
+        {
+            return(i);
+        }
     }
 
     return(-1);
@@ -228,7 +229,7 @@ int main(int argc, char **argv)
                 case SDL_MOUSEBUTTONDOWN: {
                     if (e.button.button == SDL_BUTTON_LEFT) {
                         mouse_held = true;
-                        line_index = handle_moving_lines(e.button.x, e.button.y, lines, ARRAY_LEN(lines));
+                        line_index = get_index_of_selected_origin(e.button.x, e.button.y, lines, ARRAY_LEN(lines));
                     }
                 } break;
 
