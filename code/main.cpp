@@ -244,15 +244,17 @@ int main(int argc, char **argv)
                         f32 x = IGNORE_DECIMAL(((f32) e.motion.x / (f32) WIDTH) * RECT_ROWS);
                         f32 y = IGNORE_DECIMAL(((f32) e.motion.y / (f32) HEIGHT) * RECT_COLS);
                         
-                        // @Note: Simple way to loop back when line_index = 0.
-                        s32 connected_line_index = line_index - 1 == -1 ? ARRAY_LEN(lines) - 1 : line_index - 1;
+                        if ((x > 0 && x < RECT_ROWS) && (y > 0 && y < RECT_COLS)) {
+                            // @Note: Simple way to loop back when line_index = 0.
+                            s32 connected_line_index = line_index - 1 == -1 ? ARRAY_LEN(lines) - 1 : line_index - 1;
+                            
+                            lines[line_index].p0.x = x;
+                            lines[line_index].p0.y = y;
+                            lines[connected_line_index].p1.x = x;
+                            lines[connected_line_index].p1.y = y;
                         
-                        lines[line_index].p0.x = x;
-                        lines[line_index].p0.y = y;
-                        lines[connected_line_index].p1.x = x;
-                        lines[connected_line_index].p1.y = y;
-                        
-                        rasterize_shape(lines, ARRAY_LEN(lines), rects, filled_rects);
+                            rasterize_shape(lines, ARRAY_LEN(lines), rects, filled_rects);
+                        }
                     }
                 } break;
             }
