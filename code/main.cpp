@@ -16,7 +16,7 @@
         
 #define ARRAY_LEN(arr) (sizeof(arr)/sizeof(arr[0]))
 #define ARRAY_AT(arr, row, col) ((arr)[RECT_COLS * (row) + (col)])
-#define IGNORE_DECIMAL(x) ((f32)((s32)(x)))
+#define FLOORF(x) ((f32)((s32)(x)))
 
 #define FPS 60
 #define MS_PER_FRAME (1000/FPS)
@@ -65,67 +65,67 @@ internal inline Vec2f vec2f_get_direction(Line line)
     };
 }
 
-internal u32 line_check_intersections(Line *lines, size_t length, Line other)
+internal bool line_check_intersections(Line line, Line other, f32 *t, f32 *u)
 {
-    u32 intersections = 0;
-    for (size_t i = 0; i < length; ++i) {
-        Vec2f As = lines[i].p0;
-        Vec2f Ad = vec2f_get_direction(lines[i]);
+    Vec2f As = line.p0;
+    Vec2f Ad = vec2f_get_direction(line);
 
-        Vec2f Bs = other.p0;
-        Vec2f Bd = vec2f_get_direction(other);
+    Vec2f Bs = other.p0;
+    Vec2f Bd = vec2f_get_direction(other);
 
-        // @Note: For more information read the supplimentary paper 'Lines intersection.pdf', while trying to get
-        // 'inspired' for this project I also found this amazing implementation, which might be helpful to some.
-        //
-        // https://github.com/leddoo/edu-vector-graphics/blob/master/src/main.rs
-        f32 det = -Ad.x*Bd.y + Ad.y*Bd.x;
-        if (det == 0.0f) continue;
+    // @Note: For more information read the supplimentary paper 'Lines intersection.pdf', while trying to get
+    // 'inspired' for this project I also found this amazing implementation, which might be helpful to some.
+    //
+    // https://github.com/leddoo/edu-vector-graphics/blob/master/src/main.rs
+    f32 det = -Ad.x*Bd.y + Ad.y*Bd.x;
+    if (det == 0.0f) return(false);
 
-        f32 i_det = 1.0f / det;
-        f32 t = i_det * (-Bd.y*(Bs.x - As.x) + Bd.x*(Bs.y - As.y));
-        f32 u = i_det * (-Ad.y*(Bs.x - As.x) + Ad.x*(Bs.y - As.y));
+    *t = (1.0f/det) * (-Bd.y*(Bs.x - As.x) + Bd.x*(Bs.y - As.y));
+    *u = (1.0f/det) * (-Ad.y*(Bs.x - As.x) + Ad.x*(Bs.y - As.y));
 
-        // @Note: Our 'u >= 0' means that we don't care how much we stretch the 'other' line/ray.
-        if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) intersections += 1;
-    }
-
-    return(intersections);
+    return(true);
 }
 
+// @ToDo: Add more fill rules to see how they work on different shapes.
 internal void rasterize_shape(Line *lines, size_t length, SDL_Rect *rects, SDL_Rect *filled_rects)
 {
     memset(rects, 0, RECT_ROWS*RECT_COLS*sizeof(SDL_Rect));
     memset(filled_rects, 0, RECT_ROWS*RECT_COLS*sizeof(SDL_Rect));
-    
+
+    f32 t, u;
     SDL_Rect rect = {0};
     rect.w = rect.h = RECT_RES;
-    
+        
     for (u32 row = 0; row < RECT_ROWS; ++row) {
         for (u32 col = 0; col < RECT_COLS; ++col) {
             f32 x = row + 0.5f;
             f32 y = col + 0.5f;
             Line other = {{x, y}, {x - 1.0f, y}};
-            
+
+            u32 intersections = 0;
+            for (size_t i = 0; i < length; ++i) {
+                if (!line_check_intersections(lines[i], other, &t, &u)) continue;
+                
+                // @Note: Our 'u >= 0' means that we don't care how much we stretch the 'other' line/ray.
+                if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) intersections += 1;
+            }
+                        
             rect.y = col * rect.h;
             rect.x = row * rect.w;
-                        
-            // @ToDo: Add more fill rules to see how they work on different shapes.
-            if (line_check_intersections(lines, length, other) % 2 != 0) {
-                ARRAY_AT(filled_rects, row, col) = rect;
-            } else {
-                ARRAY_AT(rects, row, col) = rect;
-            }
+
+            if (intersections % 2 != 0) ARRAY_AT(filled_rects, row, col) = rect;
+            else ARRAY_AT(rects, row, col) = rect;
         }
     }
 }
 
 internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line *lines, s32 length)
 {
+    const s32 w = 2*CIRCLE_RADIUS;
+    
     for (s32 i = 0; i < length; ++i) {
         s32 x = (s32) (lines[i].p0.x * RECT_RES) - CIRCLE_RADIUS;
-        s32 y = (s32) (lines[i].p0.y * RECT_RES) - CIRCLE_RADIUS;
-        s32 w = 2*CIRCLE_RADIUS;
+        s32 y = (s32) (lines[i].p0.y * RECT_RES) - CIRCLE_RADIUS;    
         
         if ((mouse_x >= x && mouse_x <= x + w) &&
             (mouse_y >= y && mouse_y <= y + w))
@@ -233,6 +233,8 @@ int main(int argc, char **argv)
                     if (e.button.button == SDL_BUTTON_LEFT) {
                         mouse_held = true;
                         line_index = get_index_of_selected_origin(e.button.x, e.button.y, lines, ARRAY_LEN(lines));
+                    } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                        printf("ToDo: Pressed RMB\n");
                     }
                 } break;
 
@@ -245,8 +247,8 @@ int main(int argc, char **argv)
 
                 case SDL_MOUSEMOTION: {
                     if (mouse_held && line_index != -1) {
-                        f32 x = IGNORE_DECIMAL(((f32) e.motion.x / (f32) WIDTH) * RECT_ROWS);
-                        f32 y = IGNORE_DECIMAL(((f32) e.motion.y / (f32) HEIGHT) * RECT_COLS);
+                        f32 x = FLOORF(((f32) e.motion.x/WIDTH) * RECT_ROWS);
+                        f32 y = FLOORF(((f32) e.motion.y/HEIGHT) * RECT_COLS);
                         
                         if ((x > 0 && x < RECT_ROWS) && (y > 0 && y < RECT_COLS)) {
                             // @Note: Simple way to loop back when line_index = 0.
