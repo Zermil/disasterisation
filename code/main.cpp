@@ -5,6 +5,11 @@
 
 #include <SDL2/SDL.h>
 
+typedef uint32_t u32;
+typedef uint8_t  u8;
+typedef int32_t  s32;
+typedef float    f32;
+
 #define UNUSED(x) ((void)(x))
 #define ERROR_EXIT(err, msg, ...)                   \
     do {                                            \
@@ -23,20 +28,13 @@
 #define WIDTH 1280
 #define HEIGHT 720
 
-#define RECT_RES 40
+#define RECT_RES 20
 #define RECT_ROWS (WIDTH / RECT_RES)
 #define RECT_COLS (HEIGHT / RECT_RES)
-#define CIRCLE_RADIUS 20
+#define CIRCLE_RADIUS 15
 
 #define internal static
 #define global static
-
-typedef uint32_t u32;
-typedef uint8_t u8;
-
-typedef int32_t s32;
-
-typedef float f32;
 
 struct Render_Ctx {
     SDL_Window *window;
@@ -202,9 +200,9 @@ int main(int argc, char **argv)
     // @Note: This is a placeholder for now, just to start
     // with some basic points.
     Line lines[3] = {0};
-    lines[0].p0 = {3, 3};
-    lines[1].p0 = {10, 4};
-    lines[2].p0 = {8, 8};
+    lines[0].p0 = {RECT_ROWS/2, 10};
+    lines[1].p0 = {RECT_ROWS/8, 20};
+    lines[2].p0 = {RECT_ROWS - 10, 30};
     lines[0].p1 = {lines[1].p0.x, lines[1].p0.y};
     lines[1].p1 = {lines[2].p0.x, lines[2].p0.y};
     lines[2].p1 = {lines[0].p0.x, lines[0].p0.y};
@@ -250,7 +248,7 @@ int main(int argc, char **argv)
                         f32 x = FLOORF(((f32) e.motion.x/WIDTH) * RECT_ROWS);
                         f32 y = FLOORF(((f32) e.motion.y/HEIGHT) * RECT_COLS);
                         
-                        if ((x > 0 && x < RECT_ROWS) && (y > 0 && y < RECT_COLS)) {
+                        if ((x > 0.0f && x < RECT_ROWS) && (y > 0.0f && y < RECT_COLS)) {
                             // @Note: Simple way to loop back when line_index = 0.
                             s32 connected_line_index = line_index - 1 == -1 ? ARRAY_LEN(lines) - 1 : line_index - 1;
                             
