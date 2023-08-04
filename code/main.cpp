@@ -32,6 +32,7 @@ typedef float    f32;
 #define RECT_ROWS (WIDTH / RECT_RES)
 #define RECT_COLS (HEIGHT / RECT_RES)
 #define CIRCLE_RADIUS 15
+#define LINES_MAX 32
 
 #define internal static
 #define global static
@@ -41,20 +42,27 @@ struct Render_Ctx {
     SDL_Renderer *renderer;
 };
 
+// @ToDo: Would be nice to convert everything to integers.
 struct Vec2f {
     f32 x;
     f32 y;
 };
 
 struct Line {
-    Vec2f p0;
-    Vec2f p1;
+    f32 x0;
+    f32 y0;
+    f32 x1;
+    f32 y1;
+};
+
+struct Line_Array {
+    Line data[LINES_MAX];
+    size_t size;
 };
 
 struct Min_bb {
     u32 max_x;
-    u32 min_x;
-    
+    u32 min_x;    
     u32 max_y;
     u32 min_y;
 };
@@ -63,20 +71,31 @@ struct Min_bb {
 global bool mouse_held = false;
 global s32 line_index = -1;
 
+internal inline void line_array_add(Line_Array *lines, f32 x0, f32 y0, f32 x1, f32 y1)
+{
+    if (lines->size == LINES_MAX) return;
+   
+    lines->data[lines->size].x0 = x0;
+    lines->data[lines->size].x1 = x1;
+    lines->data[lines->size].y0 = y0;
+    lines->data[lines->size].y1 = y1;
+    lines->size += 1;
+}
+
 internal inline Vec2f vec2f_get_direction(Line line)
 {
     return {
-        line.p1.x - line.p0.x,
-        line.p1.y - line.p0.y
+        line.x1 - line.x0,
+        line.y1 - line.y0
     };
 }
 
 internal bool line_check_intersections(Line line, Line other, f32 *t, f32 *u)
 {
-    Vec2f As = line.p0;
+    Vec2f As = {line.x0, line.y0};
     Vec2f Ad = vec2f_get_direction(line);
 
-    Vec2f Bs = other.p0;
+    Vec2f Bs = {other.x0, other.y0};
     Vec2f Bd = vec2f_get_direction(other);
 
     // @Note: For more information read the supplimentary paper 'Lines intersection.pdf', while trying to get
@@ -92,62 +111,61 @@ internal bool line_check_intersections(Line line, Line other, f32 *t, f32 *u)
     return(true);
 }
 
-internal Min_bb find_min_bb(Line *lines, size_t length)
+internal Min_bb find_min_bb(Line_Array *lines)
 {
     Min_bb min_bb = {0};
-    min_bb.min_x = (u32) lines[0].p0.x;
-    min_bb.max_x = (u32) lines[0].p0.x;
-    min_bb.min_y = (u32) lines[0].p0.y;
-    min_bb.max_y = (u32) lines[0].p0.y;
+    min_bb.min_x = (u32) lines->data[0].x0;
+    min_bb.max_x = (u32) lines->data[0].x0;
+    min_bb.min_y = (u32) lines->data[0].y0;
+    min_bb.max_y = (u32) lines->data[0].y0;
 
     // @Note: Lines are all connected no need to check
-    // lines[i].p1 it will just be the next item.
-    for (size_t i = 1; i < length; ++i) {
-        if (lines[i].p0.x < min_bb.min_x) min_bb.min_x = (u32) lines[i].p0.x;
-        else if (lines[i].p0.x > min_bb.max_x) min_bb.max_x = (u32) lines[i].p0.x;
+    // lines->data[i].x1/y1 as it will just be the next item.
+    for (size_t i = 1; i < lines->size; ++i) {
+        if (lines->data[i].x0 < min_bb.min_x) min_bb.min_x = (u32) lines->data[i].x0;
+        else if (lines->data[i].x0 > min_bb.max_x) min_bb.max_x = (u32) lines->data[i].x0;
         
-        if (lines[i].p0.y < min_bb.min_y) min_bb.min_y = (u32) lines[i].p0.y;
-        else if (lines[i].p0.y > min_bb.max_y) min_bb.max_y = (u32) lines[i].p0.y;
+        if (lines->data[i].y0 < min_bb.min_y) min_bb.min_y = (u32) lines->data[i].y0;
+        else if (lines->data[i].y0 > min_bb.max_y) min_bb.max_y = (u32) lines->data[i].y0;
     }
 
     return(min_bb);
 }
 
 // @ToDo: Add more fill rules to see how they work on different shapes.
-internal void rasterize_shape(Line *lines, size_t length, SDL_Rect *rects, SDL_Rect *filled_rects)
+internal void rasterize_shape(Line_Array *lines, SDL_Rect *rects, SDL_Rect *filled_rects)
 {
     memset(filled_rects, 0, sizeof(SDL_Rect)*RECT_ROWS*RECT_COLS);
     
-    Min_bb min_bb = find_min_bb(lines, length);
+    Min_bb min_bb = find_min_bb(lines);
     f32 t, u;
     
     for (u32 row = min_bb.min_x; row < min_bb.max_x; ++row) {
         for (u32 col = min_bb.min_y; col < min_bb.max_y; ++col) {
             f32 x = row + 0.5f;
             f32 y = col + 0.5f;
-            Line other = {{x, y}, {x - 1.0f, y}};
-
+            Line other = {x, y, x - 1.0f, y};
+            
             u32 intersections = 0;
-            for (size_t i = 0; i < length; ++i) {
-                if (!line_check_intersections(lines[i], other, &t, &u)) continue;
+            for (size_t i = 0; i < lines->size; ++i) {
+                if (!line_check_intersections(lines->data[i], other, &t, &u)) continue;
                 
                 // @Note: Our 'u >= 0' means that we don't care how much we stretch the 'other' line/ray.
                 if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) intersections += 1;
             }
 
             if (intersections % 2 != 0) ARRAY_AT(filled_rects, row, col) = ARRAY_AT(rects, row, col);
-            else ARRAY_AT(filled_rects, row, col) = {0};
         }
     }
 }
 
-internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line *lines, s32 length)
+internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line_Array *lines)
 {
     const s32 w = 2*CIRCLE_RADIUS;
     
-    for (s32 i = 0; i < length; ++i) {
-        s32 x = (s32) (lines[i].p0.x * RECT_RES) - CIRCLE_RADIUS;
-        s32 y = (s32) (lines[i].p0.y * RECT_RES) - CIRCLE_RADIUS;    
+    for (s32 i = 0; i < (s32) lines->size; ++i) {
+        s32 x = (s32) (lines->data[i].x0 * RECT_RES) - CIRCLE_RADIUS;
+        s32 y = (s32) (lines->data[i].y0 * RECT_RES) - CIRCLE_RADIUS;    
         
         if ((mouse_x >= x && mouse_x <= x + w) &&
             (mouse_y >= y && mouse_y <= y + w))
@@ -221,15 +239,26 @@ int main(int argc, char **argv)
     SDL_Rect rects[RECT_ROWS * RECT_COLS] = {0};
     SDL_Rect filled_rects[RECT_ROWS * RECT_COLS] = {0};
 
+    Line_Array lines = {0};
+    lines.size = 3;
+    
     // @Note: This is a placeholder for now, just to start
     // with some basic points.
-    Line lines[3] = {0};
-    lines[0].p0 = {RECT_ROWS/2, 10};
-    lines[1].p0 = {RECT_ROWS/8, 20};
-    lines[2].p0 = {RECT_ROWS - 10, 30};
-    lines[0].p1 = {lines[1].p0.x, lines[1].p0.y};
-    lines[1].p1 = {lines[2].p0.x, lines[2].p0.y};
-    lines[2].p1 = {lines[0].p0.x, lines[0].p0.y};
+    {
+        lines.data[0].x0 = RECT_ROWS/2;
+        lines.data[0].y0 = 10;
+        lines.data[1].x0 = RECT_ROWS/8;
+        lines.data[1].y0 = 20;
+        lines.data[2].x0 = RECT_ROWS - 10;
+        lines.data[2].y0 = 30;
+    
+        lines.data[0].x1 = lines.data[1].x0;
+        lines.data[0].y1 = lines.data[1].y0;
+        lines.data[1].x1 = lines.data[2].x0;
+        lines.data[1].y1 = lines.data[2].y0;
+        lines.data[2].x1 = lines.data[0].x0;
+        lines.data[2].y1 = lines.data[0].y0;
+    }
 
     // @Note: Create initial board.
     for (u32 row = 0; row < RECT_ROWS; ++row) {
@@ -242,7 +271,7 @@ int main(int argc, char **argv)
         }
     }
     
-    rasterize_shape(lines, ARRAY_LEN(lines), rects, filled_rects);
+    rasterize_shape(&lines, rects, filled_rects);
     
     Render_Ctx context = create_render_context(WIDTH, HEIGHT, "A Window");
     bool should_quit = false;
@@ -265,7 +294,7 @@ int main(int argc, char **argv)
                 case SDL_MOUSEBUTTONDOWN: {
                     if (e.button.button == SDL_BUTTON_LEFT) {
                         mouse_held = true;
-                        line_index = get_index_of_selected_origin(e.button.x, e.button.y, lines, ARRAY_LEN(lines));
+                        line_index = get_index_of_selected_origin(e.button.x, e.button.y, &lines);
                     } else if (e.button.button == SDL_BUTTON_RIGHT) {
                         printf("ToDo: Pressed RMB\n");
                     }
@@ -285,14 +314,14 @@ int main(int argc, char **argv)
                         
                         if ((x > 0.0f && x < RECT_ROWS) && (y > 0.0f && y < RECT_COLS)) {
                             // @Note: Simple way to loop back when line_index = 0.
-                            s32 connected_line_index = line_index - 1 == -1 ? ARRAY_LEN(lines) - 1 : line_index - 1;
+                            s32 connected_line_index = line_index - 1 == -1 ? (s32) lines.size - 1 : line_index - 1;
                             
-                            lines[line_index].p0.x = x;
-                            lines[line_index].p0.y = y;
-                            lines[connected_line_index].p1.x = x;
-                            lines[connected_line_index].p1.y = y;
+                            lines.data[line_index].x0 = x;
+                            lines.data[line_index].y0 = y;
+                            lines.data[connected_line_index].x1 = x;
+                            lines.data[connected_line_index].y1 = y;
                         
-                            rasterize_shape(lines, ARRAY_LEN(lines), rects, filled_rects);
+                            rasterize_shape(&lines, rects, filled_rects);
                         }
                     }
                 } break;
@@ -311,11 +340,11 @@ int main(int argc, char **argv)
             SDL_RenderFillRect(context.renderer, &filled_rects[i]);
         }
 
-        for (u32 i = 0; i < ARRAY_LEN(lines); ++i) {
-            u32 x1 = (u32) (lines[i].p0.x * RECT_RES);
-            u32 y1 = (u32) (lines[i].p0.y * RECT_RES);
-            u32 x2 = (u32) (lines[i].p1.x * RECT_RES);
-            u32 y2 = (u32) (lines[i].p1.y * RECT_RES);
+        for (u32 i = 0; i < lines.size; ++i) {
+            u32 x1 = (u32) (lines.data[i].x0 * RECT_RES);
+            u32 y1 = (u32) (lines.data[i].y0 * RECT_RES);
+            u32 x2 = (u32) (lines.data[i].x1 * RECT_RES);
+            u32 y2 = (u32) (lines.data[i].y1 * RECT_RES);
 
             SDL_SetRenderDrawColor(context.renderer, 255, 0, 0, 255);
             SDL_RenderDrawLine(context.renderer, x1, y1, x2, y2);
