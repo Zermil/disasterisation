@@ -51,6 +51,14 @@ struct Line {
     Vec2f p1;
 };
 
+struct Min_bb {
+    u32 max_x;
+    u32 min_x;
+    
+    u32 max_y;
+    u32 min_y;
+};
+
 // @ToDo: This could be in some struct.
 global bool mouse_held = false;
 global s32 line_index = -1;
@@ -84,18 +92,37 @@ internal bool line_check_intersections(Line line, Line other, f32 *t, f32 *u)
     return(true);
 }
 
+internal Min_bb find_min_bb(Line *lines, size_t length)
+{
+    Min_bb min_bb = {0};
+    min_bb.min_x = (u32) lines[0].p0.x;
+    min_bb.max_x = (u32) lines[0].p0.x;
+    min_bb.min_y = (u32) lines[0].p0.y;
+    min_bb.max_y = (u32) lines[0].p0.y;
+
+    // @Note: Lines are all connected no need to check
+    // lines[i].p1 it will just be the next item.
+    for (size_t i = 1; i < length; ++i) {
+        if (lines[i].p0.x < min_bb.min_x) min_bb.min_x = (u32) lines[i].p0.x;
+        else if (lines[i].p0.x > min_bb.max_x) min_bb.max_x = (u32) lines[i].p0.x;
+        
+        if (lines[i].p0.y < min_bb.min_y) min_bb.min_y = (u32) lines[i].p0.y;
+        else if (lines[i].p0.y > min_bb.max_y) min_bb.max_y = (u32) lines[i].p0.y;
+    }
+
+    return(min_bb);
+}
+
 // @ToDo: Add more fill rules to see how they work on different shapes.
 internal void rasterize_shape(Line *lines, size_t length, SDL_Rect *rects, SDL_Rect *filled_rects)
 {
-    memset(rects, 0, RECT_ROWS*RECT_COLS*sizeof(SDL_Rect));
-    memset(filled_rects, 0, RECT_ROWS*RECT_COLS*sizeof(SDL_Rect));
-
+    memset(filled_rects, 0, sizeof(SDL_Rect)*RECT_ROWS*RECT_COLS);
+    
+    Min_bb min_bb = find_min_bb(lines, length);
     f32 t, u;
-    SDL_Rect rect = {0};
-    rect.w = rect.h = RECT_RES;
-        
-    for (u32 row = 0; row < RECT_ROWS; ++row) {
-        for (u32 col = 0; col < RECT_COLS; ++col) {
+    
+    for (u32 row = min_bb.min_x; row < min_bb.max_x; ++row) {
+        for (u32 col = min_bb.min_y; col < min_bb.max_y; ++col) {
             f32 x = row + 0.5f;
             f32 y = col + 0.5f;
             Line other = {{x, y}, {x - 1.0f, y}};
@@ -107,12 +134,9 @@ internal void rasterize_shape(Line *lines, size_t length, SDL_Rect *rects, SDL_R
                 // @Note: Our 'u >= 0' means that we don't care how much we stretch the 'other' line/ray.
                 if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) intersections += 1;
             }
-                        
-            rect.y = col * rect.h;
-            rect.x = row * rect.w;
 
-            if (intersections % 2 != 0) ARRAY_AT(filled_rects, row, col) = rect;
-            else ARRAY_AT(rects, row, col) = rect;
+            if (intersections % 2 != 0) ARRAY_AT(filled_rects, row, col) = ARRAY_AT(rects, row, col);
+            else ARRAY_AT(filled_rects, row, col) = {0};
         }
     }
 }
@@ -206,6 +230,17 @@ int main(int argc, char **argv)
     lines[0].p1 = {lines[1].p0.x, lines[1].p0.y};
     lines[1].p1 = {lines[2].p0.x, lines[2].p0.y};
     lines[2].p1 = {lines[0].p0.x, lines[0].p0.y};
+
+    // @Note: Create initial board.
+    for (u32 row = 0; row < RECT_ROWS; ++row) {
+        for (u32 col = 0; col < RECT_COLS; ++col) {
+            SDL_Rect rect = {0};
+            rect.w = rect.h = RECT_RES;                        
+            rect.x = row * rect.w;
+            rect.y = col * rect.h;
+            ARRAY_AT(rects, row, col) = rect;
+        }
+    }
     
     rasterize_shape(lines, ARRAY_LEN(lines), rects, filled_rects);
     
@@ -289,9 +324,7 @@ int main(int argc, char **argv)
         }
 
         SDL_RenderPresent(context.renderer);
-        if (time_to_wait > 0 && time_to_wait < MS_PER_FRAME) {
-            SDL_Delay(time_to_wait);
-        }
+        if (time_to_wait > 0 && time_to_wait < MS_PER_FRAME) SDL_Delay(time_to_wait);
     }
 
     destroy_render_context(&context);
