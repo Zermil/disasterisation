@@ -60,13 +60,6 @@ struct Line_Array {
     size_t size;
 };
 
-struct Min_bb {
-    u32 max_x;
-    u32 min_x;    
-    u32 max_y;
-    u32 min_y;
-};
-
 // @ToDo: This could be in some struct.
 global bool mouse_held = false;
 global s32 line_index = -1;
@@ -111,37 +104,29 @@ internal bool line_check_intersections(Line line, Line other, f32 *t, f32 *u)
     return(true);
 }
 
-internal Min_bb find_min_bb(Line_Array *lines)
-{
-    Min_bb min_bb = {0};
-    min_bb.min_x = (u32) lines->data[0].x0;
-    min_bb.max_x = (u32) lines->data[0].x0;
-    min_bb.min_y = (u32) lines->data[0].y0;
-    min_bb.max_y = (u32) lines->data[0].y0;
-
-    // @Note: Lines are all connected no need to check
-    // lines->data[i].x1/y1 as it will just be the next item.
-    for (size_t i = 1; i < lines->size; ++i) {
-        if (lines->data[i].x0 < min_bb.min_x) min_bb.min_x = (u32) lines->data[i].x0;
-        else if (lines->data[i].x0 > min_bb.max_x) min_bb.max_x = (u32) lines->data[i].x0;
-        
-        if (lines->data[i].y0 < min_bb.min_y) min_bb.min_y = (u32) lines->data[i].y0;
-        else if (lines->data[i].y0 > min_bb.max_y) min_bb.max_y = (u32) lines->data[i].y0;
-    }
-
-    return(min_bb);
-}
-
 // @ToDo: Add more fill rules to see how they work on different shapes.
 internal void rasterize_shape(Line_Array *lines, SDL_Rect *rects, SDL_Rect *filled_rects)
 {
     memset(filled_rects, 0, sizeof(SDL_Rect)*RECT_ROWS*RECT_COLS);
     
-    Min_bb min_bb = find_min_bb(lines);
-    f32 t, u;
+    u32 min_x = (u32) lines->data[0].x0;
+    u32 max_x = (u32) lines->data[0].x0;
+    u32 min_y = (u32) lines->data[0].y0;
+    u32 max_y = (u32) lines->data[0].y0;
+
+    // @Note: Lines are all connected no need to check
+    // lines->data[i].x1/y1 as it will just be the next item.
+    for (size_t i = 1; i < lines->size; ++i) {
+        if (lines->data[i].x0 < min_x) min_x = (u32) lines->data[i].x0;
+        else if (lines->data[i].x0 > max_x) max_x = (u32) lines->data[i].x0;
+        
+        if (lines->data[i].y0 < min_y) min_y = (u32) lines->data[i].y0;
+        else if (lines->data[i].y0 > max_y) max_y = (u32) lines->data[i].y0;
+    }
     
-    for (u32 row = min_bb.min_x; row < min_bb.max_x; ++row) {
-        for (u32 col = min_bb.min_y; col < min_bb.max_y; ++col) {
+    f32 t, u;    
+    for (u32 row = min_x; row < max_x; ++row) {
+        for (u32 col = min_y; col < max_y; ++col) {
             f32 x = row + 0.5f;
             f32 y = col + 0.5f;
             Line other = {x, y, x - 1.0f, y};
