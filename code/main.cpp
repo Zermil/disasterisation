@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 
 #include <SDL2/SDL.h>
 
@@ -21,7 +22,8 @@ typedef float    f32;
         
 #define ARRAY_LEN(arr) (sizeof(arr)/sizeof(arr[0]))
 #define ARRAY_AT(arr, row, col) ((arr)[RECT_COLS * (row) + (col)])
-#define FLOORF(x) ((f32)((s32)(x)))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 #define FPS 60
 #define MS_PER_FRAME (1000/FPS)
@@ -42,17 +44,21 @@ struct Render_Ctx {
     SDL_Renderer *renderer;
 };
 
-// @ToDo: Would be nice to convert everything to integers.
 struct Vec2f {
     f32 x;
     f32 y;
 };
 
 struct Line {
-    f32 x0;
-    f32 y0;
-    f32 x1;
-    f32 y1;
+    u32 x0;
+    u32 y0;
+    u32 x1;
+    u32 y1;
+
+    // @Note: Connections are supposed to _always_ be clockwise.
+    // We are working under that assumption in most of the code.
+    size_t next;
+    size_t prev;
 };
 
 struct Line_Array {
@@ -64,32 +70,36 @@ struct Line_Array {
 global bool mouse_held = false;
 global s32 line_index = -1;
 
-internal inline void line_array_add(Line_Array *lines, f32 x0, f32 y0, f32 x1, f32 y1)
+internal inline void line_array_add(Line_Array *lines, s32 x0, s32 y0, s32 x1, s32 y1)
 {
     if (lines->size == LINES_MAX) return;
    
     lines->data[lines->size].x0 = x0;
-    lines->data[lines->size].x1 = x1;
     lines->data[lines->size].y0 = y0;
+    lines->data[lines->size].x1 = x1;
     lines->data[lines->size].y1 = y1;
     lines->size += 1;
 }
 
-internal inline Vec2f vec2f_get_direction(Line line)
+internal inline void line_array_connect(Line_Array *lines, size_t which, size_t next, size_t prev)
 {
-    return {
-        line.x1 - line.x0,
-        line.y1 - line.y0
-    };
+    assert(which < lines->size);
+    assert(next < lines->size);
+    assert(prev < lines->size);
+
+    lines->data[which].next = next;
+    lines->data[which].prev = prev;
 }
 
-internal bool line_check_intersections(Line line, Line other, f32 *t, f32 *u)
+// @ToDo: Would be cool to get rid off floating point math here, not super important
+// but just something to think about.
+internal bool pixel_check_intersection(Line line, f32 px, f32 py, f32 *t, f32 *u)
 {
-    Vec2f As = {line.x0, line.y0};
-    Vec2f Ad = vec2f_get_direction(line);
+    Vec2f As = {(f32) line.x0, (f32) line.y0};
+    Vec2f Ad = {line.x1 - As.x, line.y1 - As.y};
 
-    Vec2f Bs = {other.x0, other.y0};
-    Vec2f Bd = vec2f_get_direction(other);
+    Vec2f Bs = {px, py};
+    Vec2f Bd = {-1.0f, 0};
 
     // @Note: For more information read the supplimentary paper 'Lines intersection.pdf', while trying to get
     // 'inspired' for this project I also found this amazing implementation, which might be helpful to some.
@@ -109,31 +119,27 @@ internal void rasterize_shape(Line_Array *lines, SDL_Rect *rects, SDL_Rect *fill
 {
     memset(filled_rects, 0, sizeof(SDL_Rect)*RECT_ROWS*RECT_COLS);
     
-    u32 min_x = (u32) lines->data[0].x0;
-    u32 max_x = (u32) lines->data[0].x0;
-    u32 min_y = (u32) lines->data[0].y0;
-    u32 max_y = (u32) lines->data[0].y0;
+    u32 min_x = lines->data[0].x0;
+    u32 max_x = lines->data[0].x0;
+    u32 min_y = lines->data[0].y0;
+    u32 max_y = lines->data[0].y0;
 
     // @Note: Lines are all connected no need to check
     // lines->data[i].x1/y1 as it will just be the next item.
     for (size_t i = 1; i < lines->size; ++i) {
-        if (lines->data[i].x0 < min_x) min_x = (u32) lines->data[i].x0;
-        else if (lines->data[i].x0 > max_x) max_x = (u32) lines->data[i].x0;
-        
-        if (lines->data[i].y0 < min_y) min_y = (u32) lines->data[i].y0;
-        else if (lines->data[i].y0 > max_y) max_y = (u32) lines->data[i].y0;
+        min_x = MIN(lines->data[i].x0, min_x);
+        max_x = MAX(lines->data[i].x0, max_x);
+
+        min_y = MIN(lines->data[i].y0, min_y);
+        max_y = MAX(lines->data[i].y0, max_y);
     }
     
     f32 t, u;    
     for (u32 row = min_x; row < max_x; ++row) {
-        for (u32 col = min_y; col < max_y; ++col) {
-            f32 x = row + 0.5f;
-            f32 y = col + 0.5f;
-            Line other = {x, y, x - 1.0f, y};
-            
+        for (u32 col = min_y; col < max_y; ++col) { 
             u32 intersections = 0;
             for (size_t i = 0; i < lines->size; ++i) {
-                if (!line_check_intersections(lines->data[i], other, &t, &u)) continue;
+                if (!pixel_check_intersection(lines->data[i], row + 0.5f, col + 0.5f, &t, &u)) continue;
                 
                 // @Note: Our 'u >= 0' means that we don't care how much we stretch the 'other' line/ray.
                 if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) intersections += 1;
@@ -149,8 +155,8 @@ internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line_Array *
     const s32 w = 2*CIRCLE_RADIUS;
     
     for (s32 i = 0; i < (s32) lines->size; ++i) {
-        s32 x = (s32) (lines->data[i].x0 * RECT_RES) - CIRCLE_RADIUS;
-        s32 y = (s32) (lines->data[i].y0 * RECT_RES) - CIRCLE_RADIUS;    
+        s32 x = (s32) lines->data[i].x0 * RECT_RES - CIRCLE_RADIUS;
+        s32 y = (s32) lines->data[i].y0 * RECT_RES - CIRCLE_RADIUS;
         
         if ((mouse_x >= x && mouse_x <= x + w) &&
             (mouse_y >= y && mouse_y <= y + w))
@@ -223,26 +229,18 @@ int main(int argc, char **argv)
 
     SDL_Rect rects[RECT_ROWS * RECT_COLS] = {0};
     SDL_Rect filled_rects[RECT_ROWS * RECT_COLS] = {0};
-
     Line_Array lines = {0};
-    lines.size = 3;
-    
+
     // @Note: This is a placeholder for now, just to start
     // with some basic points.
     {
-        lines.data[0].x0 = RECT_ROWS/2;
-        lines.data[0].y0 = 10;
-        lines.data[1].x0 = RECT_ROWS/8;
-        lines.data[1].y0 = 20;
-        lines.data[2].x0 = RECT_ROWS - 10;
-        lines.data[2].y0 = 30;
-    
-        lines.data[0].x1 = lines.data[1].x0;
-        lines.data[0].y1 = lines.data[1].y0;
-        lines.data[1].x1 = lines.data[2].x0;
-        lines.data[1].y1 = lines.data[2].y0;
-        lines.data[2].x1 = lines.data[0].x0;
-        lines.data[2].y1 = lines.data[0].y0;
+        line_array_add(&lines, RECT_ROWS/2, 10, RECT_ROWS/8, 20);
+        line_array_add(&lines, RECT_ROWS/8, 20, RECT_ROWS - 10, 30);
+        line_array_add(&lines, RECT_ROWS - 10, 30, RECT_ROWS/2, 10);
+
+        line_array_connect(&lines, 0, 1, 2);
+        line_array_connect(&lines, 1, 2, 0);
+        line_array_connect(&lines, 2, 0, 1);
     }
 
     // @Note: Create initial board.
@@ -294,17 +292,13 @@ int main(int argc, char **argv)
 
                 case SDL_MOUSEMOTION: {
                     if (mouse_held && line_index != -1) {
-                        f32 x = FLOORF(((f32) e.motion.x/WIDTH) * RECT_ROWS);
-                        f32 y = FLOORF(((f32) e.motion.y/HEIGHT) * RECT_COLS);
+                        u32 x = (u32) (((f32) e.motion.x/WIDTH) * RECT_ROWS);
+                        u32 y = (u32) (((f32) e.motion.y/HEIGHT) * RECT_COLS);
                         
                         if ((x > 0.0f && x < RECT_ROWS) && (y > 0.0f && y < RECT_COLS)) {
-                            // @Note: Simple way to loop back when line_index = 0.
-                            s32 connected_line_index = line_index - 1 == -1 ? (s32) lines.size - 1 : line_index - 1;
-                            
-                            lines.data[line_index].x0 = x;
-                            lines.data[line_index].y0 = y;
-                            lines.data[connected_line_index].x1 = x;
-                            lines.data[connected_line_index].y1 = y;
+                            size_t connected_line = lines.data[line_index].prev;
+                            lines.data[line_index].x0 = lines.data[connected_line].x1 = x;
+                            lines.data[line_index].y0 = lines.data[connected_line].y1 = y;
                         
                             rasterize_shape(&lines, rects, filled_rects);
                         }
@@ -326,10 +320,10 @@ int main(int argc, char **argv)
         }
 
         for (u32 i = 0; i < lines.size; ++i) {
-            u32 x1 = (u32) (lines.data[i].x0 * RECT_RES);
-            u32 y1 = (u32) (lines.data[i].y0 * RECT_RES);
-            u32 x2 = (u32) (lines.data[i].x1 * RECT_RES);
-            u32 y2 = (u32) (lines.data[i].y1 * RECT_RES);
+            u32 x1 = lines.data[i].x0 * RECT_RES;
+            u32 y1 = lines.data[i].y0 * RECT_RES;
+            u32 x2 = lines.data[i].x1 * RECT_RES;
+            u32 y2 = lines.data[i].y1 * RECT_RES;
 
             SDL_SetRenderDrawColor(context.renderer, 255, 0, 0, 255);
             SDL_RenderDrawLine(context.renderer, x1, y1, x2, y2);
