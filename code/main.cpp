@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 #include <assert.h>
 
 #include <SDL2/SDL.h>
@@ -93,13 +94,10 @@ internal inline void line_array_connect(Line_Array *lines, size_t which, size_t 
 
 // @ToDo: Would be cool to get rid off floating point math here, not super important
 // but just something to think about.
-internal bool pixel_check_intersection(Line line, f32 px, f32 py, f32 *t, f32 *u)
+internal bool check_intersection(Line line, Vec2f Bs, Vec2f Bd, f32 *t, f32 *u)
 {
     Vec2f As = {(f32) line.x0, (f32) line.y0};
     Vec2f Ad = {line.x1 - As.x, line.y1 - As.y};
-
-    Vec2f Bs = {px, py};
-    Vec2f Bd = {-1.0f, 0};
 
     // @Note: For more information read the supplimentary paper 'Lines intersection.pdf', while trying to get
     // 'inspired' for this project I also found this amazing implementation, which might be helpful to some.
@@ -139,7 +137,7 @@ internal void rasterize_shape(Line_Array *lines, SDL_Rect *rects, SDL_Rect *fill
         for (u32 col = min_y; col < max_y; ++col) { 
             u32 intersections = 0;
             for (size_t i = 0; i < lines->size; ++i) {
-                if (!pixel_check_intersection(lines->data[i], row + 0.5f, col + 0.5f, &t, &u)) continue;
+                if (!check_intersection(lines->data[i], {row + 0.5f, col + 0.5f}, {-1.0f, 0.0f}, &t, &u)) continue;
                 
                 // @Note: Our 'u >= 0' means that we don't care how much we stretch the 'other' line/ray.
                 if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) intersections += 1;
@@ -168,13 +166,78 @@ internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line_Array *
     return(-1);
 }
 
-internal void render_draw_circle(SDL_Renderer *renderer, u32 cx, u32 cy, u32 r, u8 red, u8 green, u8 blue)
+// @ToDo: Points like (x0 = 40, y0 = 29) cause some weird trouble.
+internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
+{
+    assert(lines->size > 0);
+
+    u32 x0 = (u32) ((f32) mouse_x/WIDTH * RECT_ROWS);
+    u32 y0 = (u32) ((f32) mouse_y/HEIGHT * RECT_COLS);
+    u32 x1 = lines->data[0].x0;
+    u32 y1 = lines->data[0].y0;
+    
+    u32 min_dist = (x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0);
+    size_t index = 0;
+    
+    // @Note: Find the closes point to our newly created one.
+    // Since they are all connected, we just need to check x0/y0
+    // x1/y1 will just be the next item in array.
+    for (size_t i = 1; i < lines->size; ++i) {
+        u32 dx = lines->data[i].x0 - x0;
+        u32 dy = lines->data[i].y0 - y0;
+        u32 dist = dx*dx + dy*dy;
+
+        if (dist < min_dist) {
+            index = i;
+            min_dist = dist;
+        }
+    }
+
+    // @Note: Check if line intersects with any other line (excluding itself)
+    // in order to find something that nicely and seemlesly connects.
+    size_t con_index = lines->data[index].next;
+    Vec2f Bs = {(f32) x0, (f32) y0};
+    Vec2f Bd = {(f32) lines->data[con_index].x0 - x0, (f32) lines->data[con_index].y0 - y0};
+    f32 t, u;
+
+    for (size_t i = 0; i < lines->size; ++i) {
+        if (!check_intersection(lines->data[i], Bs, Bd, &t, &u)) continue;
+
+        if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) {            
+            if (Bs.x + Bd.x*u != lines->data[con_index].x0 && Bs.x + Bd.x*u != lines->data[con_index].y0) {
+                con_index = lines->data[index].prev;
+                break;
+            }
+        }
+    }
+
+    // @ToDo: Refactor this, too many low-level operations. These
+    // are very self-similar so Semantic-Compression should be applied (common pattern).
+    if (con_index == lines->data[index].next) {        
+        line_array_add(lines, x0, y0, lines->data[con_index].x0, lines->data[con_index].y0);
+        line_array_connect(lines, lines->size - 1, con_index, index);
+        
+        lines->data[con_index].prev = lines->size - 1;
+        lines->data[index].next = lines->size - 1;
+        lines->data[index].x1 = x0;
+        lines->data[index].y1 = y0;
+    } else {
+        line_array_add(lines, x0, y0, lines->data[index].x0, lines->data[index].y0);
+        line_array_connect(lines, lines->size - 1, index, con_index);
+
+        lines->data[con_index].next = lines->size - 1;
+        lines->data[index].prev = lines->size - 1;
+        lines->data[con_index].x1 = x0;
+        lines->data[con_index].y1 = y0;
+    }
+}
+
+internal void render_draw_circle(SDL_Renderer *renderer, u32 cx, u32 cy, u32 r)
 {
     u32 x = r;
     u32 y = 0;
     s32 p = 1 - r;
     
-    SDL_SetRenderDrawColor(renderer, red, green, blue, 255);
     SDL_RenderDrawLine(renderer, cx-r, cy, cx+r, cy);
     
     while (x >= y) {
@@ -234,9 +297,9 @@ int main(int argc, char **argv)
     // @Note: This is a placeholder for now, just to start
     // with some basic points.
     {
-        line_array_add(&lines, RECT_ROWS/2, 10, RECT_ROWS/8, 20);
-        line_array_add(&lines, RECT_ROWS/8, 20, RECT_ROWS - 10, 30);
-        line_array_add(&lines, RECT_ROWS - 10, 30, RECT_ROWS/2, 10);
+        line_array_add(&lines, RECT_ROWS/8, 20, RECT_ROWS/2, 10);
+        line_array_add(&lines, RECT_ROWS/2, 10, RECT_ROWS - 10, 30);
+        line_array_add(&lines, RECT_ROWS - 10, 30, RECT_ROWS/8, 20);
 
         line_array_connect(&lines, 0, 1, 2);
         line_array_connect(&lines, 1, 2, 0);
@@ -279,7 +342,8 @@ int main(int argc, char **argv)
                         mouse_held = true;
                         line_index = get_index_of_selected_origin(e.button.x, e.button.y, &lines);
                     } else if (e.button.button == SDL_BUTTON_RIGHT) {
-                        printf("ToDo: Pressed RMB\n");
+                        add_new_point(e.button.x, e.button.y, &lines);
+                        rasterize_shape(&lines, rects, filled_rects);
                     }
                 } break;
 
@@ -320,15 +384,15 @@ int main(int argc, char **argv)
         }
 
         for (u32 i = 0; i < lines.size; ++i) {
-            u32 x1 = lines.data[i].x0 * RECT_RES;
-            u32 y1 = lines.data[i].y0 * RECT_RES;
-            u32 x2 = lines.data[i].x1 * RECT_RES;
-            u32 y2 = lines.data[i].y1 * RECT_RES;
+            u32 x0 = lines.data[i].x0 * RECT_RES;
+            u32 y0 = lines.data[i].y0 * RECT_RES;
+            u32 x1 = lines.data[i].x1 * RECT_RES;
+            u32 y1 = lines.data[i].y1 * RECT_RES;
 
             SDL_SetRenderDrawColor(context.renderer, 255, 0, 0, 255);
-            SDL_RenderDrawLine(context.renderer, x1, y1, x2, y2);
-
-            render_draw_circle(context.renderer, x1, y1, CIRCLE_RADIUS, 255, 0, 0);
+            
+            SDL_RenderDrawLine(context.renderer, x0, y0, x1, y1);
+            render_draw_circle(context.renderer, x0, y0, CIRCLE_RADIUS);
         }
 
         SDL_RenderPresent(context.renderer);
