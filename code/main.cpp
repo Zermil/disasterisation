@@ -37,6 +37,10 @@ typedef float    f32;
 #define CIRCLE_RADIUS 15
 #define LINES_MAX 32
 
+// @Hack: Weird workaround for add_points functionality.
+#define EPSX ((f32) CIRCLE_RADIUS/WIDTH * RECT_ROWS)
+#define EPSY ((f32) CIRCLE_RADIUS/HEIGHT * RECT_COLS)
+
 #define internal static
 #define global static
 
@@ -176,16 +180,16 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
     u32 x1 = lines->data[0].x0;
     u32 y1 = lines->data[0].y0;
     
-    u32 min_dist = (x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0);
+    u32 min_dist = (x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0); 
     size_t index = 0;
     
     // @Note: Find the closes point to our newly created one.
     // Since they are all connected, we just need to check x0/y0
     // x1/y1 will just be the next item in array.
     for (size_t i = 1; i < lines->size; ++i) {
-        u32 dx = lines->data[i].x0 - x0;
-        u32 dy = lines->data[i].y0 - y0;
-        u32 dist = dx*dx + dy*dy;
+        x1 = lines->data[i].x0;
+        y1 = lines->data[i].y0;
+        u32 dist = (x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0);
 
         if (dist < min_dist) {
             index = i;
@@ -196,18 +200,30 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
     // @Note: Check if line intersects with any other line (excluding itself)
     // in order to find something that nicely and seemlesly connects.
     size_t con_index = lines->data[index].next;
-    Vec2f Bs = {(f32) x0, (f32) y0};
-    Vec2f Bd = {(f32) lines->data[con_index].x0 - x0, (f32) lines->data[con_index].y0 - y0};
-    f32 t, u;
+    const Vec2f Bs = {(f32) x0, (f32) y0};
+    const Vec2f Bd = {(f32) lines->data[con_index].x0 - x0, (f32) lines->data[con_index].y0 - y0};
 
+    f32 t, u;
     for (size_t i = 0; i < lines->size; ++i) {
         if (!check_intersection(lines->data[i], Bs, Bd, &t, &u)) continue;
 
-        if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) {            
-            if (Bs.x + Bd.x*u != lines->data[con_index].x0 && Bs.x + Bd.x*u != lines->data[con_index].y0) {
+        if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) {
+            // @Idea: Find an intersection point from regular line formula :: y=mx+b
+            f32 xi = Bs.x + Bd.x*u;
+            f32 yi = Bs.y + Bd.y*u;
+
+            printf("current :: (%f, %f) | next :: (%u, %u)\n", xi, yi, lines->data[con_index].x0, lines->data[con_index].y0);
+            
+            // @Hack: Part of a workaround, would be nice to get rid of this.
+            if ((xi < lines->data[con_index].x0 - EPSX) ||
+                (xi > lines->data[con_index].x0 + EPSX) ||
+                (yi < lines->data[con_index].y0 - EPSY) ||
+                (yi > lines->data[con_index].y0 + EPSY))
+            {
                 con_index = lines->data[index].prev;
                 break;
             }
+            
         }
     }
 
@@ -222,11 +238,12 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
         lines->data[index].x1 = x0;
         lines->data[index].y1 = y0;
     } else {
+        printf("Prev!\n");
         line_array_add(lines, x0, y0, lines->data[index].x0, lines->data[index].y0);
         line_array_connect(lines, lines->size - 1, index, con_index);
 
-        lines->data[con_index].next = lines->size - 1;
         lines->data[index].prev = lines->size - 1;
+        lines->data[con_index].next = lines->size - 1;
         lines->data[con_index].x1 = x0;
         lines->data[con_index].y1 = y0;
     }
