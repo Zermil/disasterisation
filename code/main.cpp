@@ -37,10 +37,6 @@ typedef float    f32;
 #define CIRCLE_RADIUS 15
 #define LINES_MAX 32
 
-// @Hack: Weird workaround for add_points functionality.
-#define EPSX ((f32) CIRCLE_RADIUS/WIDTH * RECT_ROWS)
-#define EPSY ((f32) CIRCLE_RADIUS/HEIGHT * RECT_COLS)
-
 #define internal static
 #define global static
 
