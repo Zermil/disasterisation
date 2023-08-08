@@ -1,7 +1,9 @@
-# DisasteRisation
+# Disasterisation
 
 Small program to learn more about rasterisation and maybe vector graphics while I'm at it. 
 Made with the help of [SDL2](https://www.libsdl.org/)
+
+![](./img/raster.gif)
 
 ### Compile/Build
 
