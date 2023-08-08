@@ -96,6 +96,11 @@ internal inline void line_array_connect(Line_Array *lines, size_t which, size_t 
     lines->data[which].prev = prev;
 }
 
+internal inline u32 sqr_distance(u32 x0, u32 y0, u32 x1, u32 y1)
+{
+    return((x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0));
+}
+
 // @ToDo: Would be cool to get rid off floating point math here, not super important
 // but just something to think about.
 internal bool check_intersection(Line line, Vec2f Bs, Vec2f Bd, f32 *t, f32 *u)
@@ -170,7 +175,6 @@ internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line_Array *
     return(-1);
 }
 
-// @ToDo: Points like (x0 = 40, y0 = 29) cause some weird trouble.
 internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
 {
     assert(lines->size > 0);
@@ -180,7 +184,7 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
     u32 x1 = lines->data[0].x0;
     u32 y1 = lines->data[0].y0;
     
-    u32 min_dist = (x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0); 
+    u32 min_dist = sqr_distance(x0, y0, x1, y1); 
     size_t index = 0;
     
     // @Note: Find the closes point to our newly created one.
@@ -189,7 +193,7 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
     for (size_t i = 1; i < lines->size; ++i) {
         x1 = lines->data[i].x0;
         y1 = lines->data[i].y0;
-        u32 dist = (x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0);
+        u32 dist = sqr_distance(x0, y0, x1, y1);
 
         if (dist < min_dist) {
             index = i;
@@ -197,55 +201,30 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
         }
     }
 
-    // @Note: Check if line intersects with any other line (excluding itself)
-    // in order to find something that nicely and seemlesly connects.
-    size_t con_index = lines->data[index].next;
-    const Vec2f Bs = {(f32) x0, (f32) y0};
-    const Vec2f Bd = {(f32) lines->data[con_index].x0 - x0, (f32) lines->data[con_index].y0 - y0};
-
-    f32 t, u;
-    for (size_t i = 0; i < lines->size; ++i) {
-        if (!check_intersection(lines->data[i], Bs, Bd, &t, &u)) continue;
-
-        if (u >= 0.0f && (t >= 0.0f && t <= 1.0f)) {
-            // @Idea: Find an intersection point from regular line formula :: y=mx+b
-            f32 xi = Bs.x + Bd.x*u;
-            f32 yi = Bs.y + Bd.y*u;
-
-            printf("current :: (%f, %f) | next :: (%u, %u)\n", xi, yi, lines->data[con_index].x0, lines->data[con_index].y0);
-            
-            // @Hack: Part of a workaround, would be nice to get rid of this.
-            if ((xi < lines->data[con_index].x0 - EPSX) ||
-                (xi > lines->data[con_index].x0 + EPSX) ||
-                (yi < lines->data[con_index].y0 - EPSY) ||
-                (yi > lines->data[con_index].y0 + EPSY))
-            {
-                con_index = lines->data[index].prev;
-                break;
-            }
-            
-        }
-    }
-
+    // @Note: Find closest line between next and prev.
+    size_t next = lines->data[index].next;
+    size_t prev = lines->data[index].prev;
+    u32 dist_next = sqr_distance(x0, y0, lines->data[next].x0, lines->data[next].y0);
+    u32 dist_prev = sqr_distance(x0, y0, lines->data[prev].x0, lines->data[prev].y0);
+    
     // @ToDo: Refactor this, too many low-level operations. These
     // are very self-similar so Semantic-Compression should be applied (common pattern).
-    if (con_index == lines->data[index].next) {        
-        line_array_add(lines, x0, y0, lines->data[con_index].x0, lines->data[con_index].y0);
-        line_array_connect(lines, lines->size - 1, con_index, index);
+    if (dist_next <= dist_prev) {
+        line_array_add(lines, x0, y0, lines->data[next].x0, lines->data[next].y0);
+        line_array_connect(lines, lines->size - 1, next, index);
         
-        lines->data[con_index].prev = lines->size - 1;
+        lines->data[next].prev = lines->size - 1;
         lines->data[index].next = lines->size - 1;
         lines->data[index].x1 = x0;
         lines->data[index].y1 = y0;
     } else {
-        printf("Prev!\n");
         line_array_add(lines, x0, y0, lines->data[index].x0, lines->data[index].y0);
-        line_array_connect(lines, lines->size - 1, index, con_index);
+        line_array_connect(lines, lines->size - 1, index, prev);
 
         lines->data[index].prev = lines->size - 1;
-        lines->data[con_index].next = lines->size - 1;
-        lines->data[con_index].x1 = x0;
-        lines->data[con_index].y1 = y0;
+        lines->data[prev].next = lines->size - 1;
+        lines->data[prev].x1 = x0;
+        lines->data[prev].y1 = y0;
     }
 }
 
