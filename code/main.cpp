@@ -332,11 +332,17 @@ int main(int argc, char **argv)
                         mouse_held = true;
                         line_index = get_index_of_selected_origin(e.button.x, e.button.y, &lines);
                     } else if (e.button.button == SDL_BUTTON_RIGHT) {
-                        add_new_point(e.button.x, e.button.y, &lines);
-                        rasterize_shape(&lines, rects, filled_rects);
+                        line_index = get_index_of_selected_origin(e.button.x, e.button.y, &lines);
+
+                        if (line_index == -1) {
+                            add_new_point(e.button.x, e.button.y, &lines);
+                            rasterize_shape(&lines, rects, filled_rects);
+                        } else {
+                            printf("@ToDo: Delete selected point!\n");
+                        }
                     }
                 } break;
-
+ 
                 case SDL_MOUSEBUTTONUP: {
                     if (e.button.button == SDL_BUTTON_LEFT) mouse_held = false;
                     line_index = -1;
