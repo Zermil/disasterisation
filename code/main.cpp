@@ -234,6 +234,8 @@ internal void delete_point(s32 index, Line_Array *lines)
     lines->data[selected_prev].x1 = lines->data[selected_next].x0;
     lines->data[selected_prev].y1 = lines->data[selected_next].y0;
 
+    // @ToDo: Have you heard of linked-lists? This is very similar
+    // to it, just with extra steps.
     if (index != lines->size - 1) {
         size_t last = lines->size - 1;
         size_t last_prev = lines->data[last].prev;
