@@ -58,6 +58,8 @@ struct Line {
 
     // @Note: Connections are supposed to _always_ be clockwise.
     // We are working under that assumption in most of the code.
+    // There's also an assumption that all lines are connected so we don't
+    // have to check x1/y1 because they're next in array.
     size_t next;
     size_t prev;
 };
@@ -71,7 +73,12 @@ struct Line_Array {
 global bool mouse_held = false;
 global s32 line_index = -1;
 
-internal inline void line_array_add(Line_Array *lines, s32 x0, s32 y0, s32 x1, s32 y1)
+internal inline u32 sqr_distance(u32 x0, u32 y0, u32 x1, u32 y1)
+{
+    return((x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0));
+}
+
+internal void line_array_add(Line_Array *lines, s32 x0, s32 y0, s32 x1, s32 y1)
 {
     if (lines->size == LINES_MAX) return;
    
@@ -82,7 +89,7 @@ internal inline void line_array_add(Line_Array *lines, s32 x0, s32 y0, s32 x1, s
     lines->size += 1;
 }
 
-internal inline void line_array_connect(Line_Array *lines, size_t which, size_t next, size_t prev)
+internal void line_array_connect(Line_Array *lines, size_t which, size_t next, size_t prev)
 {
     assert(which < lines->size);
     assert(next < lines->size);
@@ -92,17 +99,12 @@ internal inline void line_array_connect(Line_Array *lines, size_t which, size_t 
     lines->data[which].prev = prev;
 }
 
-internal inline void line_array_reconnect(Line_Array *lines, size_t idx, size_t con_idx, size_t to, u32 x0, u32 y0)
+internal void line_array_reconnect(Line_Array *lines, size_t index, size_t con_index, size_t to, u32 x0, u32 y0)
 {
-    lines->data[idx].prev = to;
-    lines->data[con_idx].next = to;
-    lines->data[con_idx].x1 = x0;
-    lines->data[con_idx].y1 = y0;
-}
-
-internal inline u32 sqr_distance(u32 x0, u32 y0, u32 x1, u32 y1)
-{
-    return((x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0));
+    lines->data[index].prev = to;
+    lines->data[con_index].next = to;
+    lines->data[con_index].x1 = x0;
+    lines->data[con_index].y1 = y0;
 }
 
 // @ToDo: Would be cool to get rid off floating point math here, not super important
@@ -135,8 +137,6 @@ internal void rasterize_shape(Line_Array *lines, SDL_Rect *rects, SDL_Rect *fill
     u32 min_y = lines->data[0].y0;
     u32 max_y = lines->data[0].y0;
 
-    // @Note: Lines are all connected no need to check
-    // lines->data[i].x1/y1 as it will just be the next item.
     for (size_t i = 1; i < lines->size; ++i) {
         min_x = MIN(lines->data[i].x0, min_x);
         max_x = MAX(lines->data[i].x0, max_x);
@@ -191,9 +191,6 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
     u32 min_dist = sqr_distance(x0, y0, x1, y1); 
     size_t index = 0;
     
-    // @Note: Find the closes point to our newly created one.
-    // Since they are all connected, we just need to check x0/y0
-    // x1/y1 will just be the next item in array.
     for (size_t i = 1; i < lines->size; ++i) {
         x1 = lines->data[i].x0;
         y1 = lines->data[i].y0;
@@ -220,6 +217,34 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
         line_array_connect(lines, lines->size - 1, index, prev);
         line_array_reconnect(lines, index, prev, lines->size - 1, x0, y0);
     }
+}
+
+// @ToDo: lines->size and indexing is done through size_t, but
+// we're using signed 32 bit integer here and for line_index. Consider
+// using a pair or something? (C++ still won't allow to return multiple values...)
+internal void delete_point(s32 index, Line_Array *lines)
+{
+    if (lines->size == 3) return;
+
+    size_t selected_prev = lines->data[index].prev;
+    size_t selected_next = lines->data[index].next;
+    
+    lines->data[selected_prev].next = selected_next;
+    lines->data[selected_next].prev = selected_prev;
+    lines->data[selected_prev].x1 = lines->data[selected_next].x0;
+    lines->data[selected_prev].y1 = lines->data[selected_next].y0;
+
+    if (index != lines->size - 1) {
+        size_t last = lines->size - 1;
+        size_t last_prev = lines->data[last].prev;
+        size_t last_next = lines->data[last].next;
+        
+        lines->data[last_prev].next = index;
+        lines->data[last_next].prev = index;
+        lines->data[index] = lines->data[last];
+    }
+    
+    lines->size -= 1;
 }
 
 internal void render_draw_circle(SDL_Renderer *renderer, u32 cx, u32 cy, u32 r)
@@ -334,12 +359,10 @@ int main(int argc, char **argv)
                     } else if (e.button.button == SDL_BUTTON_RIGHT) {
                         line_index = get_index_of_selected_origin(e.button.x, e.button.y, &lines);
 
-                        if (line_index == -1) {
-                            add_new_point(e.button.x, e.button.y, &lines);
-                            rasterize_shape(&lines, rects, filled_rects);
-                        } else {
-                            printf("@ToDo: Delete selected point!\n");
-                        }
+                        if (line_index == -1) add_new_point(e.button.x, e.button.y, &lines);
+                        else delete_point(line_index, &lines);
+                        
+                        rasterize_shape(&lines, rects, filled_rects);
                     }
                 } break;
  
