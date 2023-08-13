@@ -92,6 +92,14 @@ internal inline void line_array_connect(Line_Array *lines, size_t which, size_t 
     lines->data[which].prev = prev;
 }
 
+internal inline void line_array_reconnect(Line_Array *lines, size_t idx, size_t con_idx, size_t to, u32 x0, u32 y0)
+{
+    lines->data[idx].prev = to;
+    lines->data[con_idx].next = to;
+    lines->data[con_idx].x1 = x0;
+    lines->data[con_idx].y1 = y0;
+}
+
 internal inline u32 sqr_distance(u32 x0, u32 y0, u32 x1, u32 y1)
 {
     return((x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0));
@@ -173,7 +181,7 @@ internal s32 get_index_of_selected_origin(s32 mouse_x, s32 mouse_y, Line_Array *
 
 internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
 {
-    assert(lines->size > 0);
+    assert(lines->size >= 3);
 
     u32 x0 = (u32) ((f32) mouse_x/WIDTH * RECT_ROWS);
     u32 y0 = (u32) ((f32) mouse_y/HEIGHT * RECT_COLS);
@@ -203,24 +211,14 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
     u32 dist_next = sqr_distance(x0, y0, lines->data[next].x0, lines->data[next].y0);
     u32 dist_prev = sqr_distance(x0, y0, lines->data[prev].x0, lines->data[prev].y0);
     
-    // @ToDo: Refactor this, too many low-level operations. These
-    // are very self-similar so Semantic-Compression should be applied (common pattern).
     if (dist_next <= dist_prev) {
         line_array_add(lines, x0, y0, lines->data[next].x0, lines->data[next].y0);
         line_array_connect(lines, lines->size - 1, next, index);
-        
-        lines->data[next].prev = lines->size - 1;
-        lines->data[index].next = lines->size - 1;
-        lines->data[index].x1 = x0;
-        lines->data[index].y1 = y0;
+        line_array_reconnect(lines, next, index, lines->size - 1, x0, y0);
     } else {
         line_array_add(lines, x0, y0, lines->data[index].x0, lines->data[index].y0);
         line_array_connect(lines, lines->size - 1, index, prev);
-
-        lines->data[index].prev = lines->size - 1;
-        lines->data[prev].next = lines->size - 1;
-        lines->data[prev].x1 = x0;
-        lines->data[prev].y1 = y0;
+        line_array_reconnect(lines, index, prev, lines->size - 1, x0, y0);
     }
 }
 
@@ -340,10 +338,8 @@ int main(int argc, char **argv)
                 } break;
 
                 case SDL_MOUSEBUTTONUP: {
-                    if (e.button.button == SDL_BUTTON_LEFT) {
-                        mouse_held = false;
-                        line_index = -1;
-                    }
+                    if (e.button.button == SDL_BUTTON_LEFT) mouse_held = false;
+                    line_index = -1;
                 } break;
 
                 case SDL_MOUSEMOTION: {
