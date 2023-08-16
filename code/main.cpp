@@ -50,6 +50,7 @@ struct Vec2f {
     f32 y;
 };
 
+// @ToDo: Better representation of a directed graph?
 struct Line {
     u32 x0;
     u32 y0;
@@ -68,10 +69,6 @@ struct Line_Array {
     Line data[LINES_MAX];
     size_t size;
 };
-
-// @ToDo: This could be in some struct.
-global bool mouse_held = false;
-global s32 line_index = -1;
 
 internal inline u32 sqr_distance(u32 x0, u32 y0, u32 x1, u32 y1)
 {
@@ -234,8 +231,6 @@ internal void delete_point(s32 index, Line_Array *lines)
     lines->data[selected_prev].x1 = lines->data[selected_next].x0;
     lines->data[selected_prev].y1 = lines->data[selected_next].y0;
 
-    // @ToDo: Have you heard of linked-lists? This is very similar
-    // to it, just with extra steps.
     if (index != lines->size - 1) {
         size_t last = lines->size - 1;
         size_t last_prev = lines->data[last].prev;
@@ -338,13 +333,15 @@ int main(int argc, char **argv)
     
     Render_Ctx context = create_render_context(WIDTH, HEIGHT, "A Window");
     bool should_quit = false;
+    bool mouse_held = false;
+    s32 line_index = 0;
+    
     u32 current_time = 0;
     u32 previous_time = SDL_GetTicks();
     
     while (!should_quit) {
         current_time = SDL_GetTicks();
         u32 time_elapsed = current_time - previous_time;
-        u32 time_to_wait = MS_PER_FRAME - time_elapsed;
         previous_time = current_time;
         
         SDL_Event e = {0};
@@ -415,7 +412,7 @@ int main(int argc, char **argv)
         }
 
         SDL_RenderPresent(context.renderer);
-        if (time_to_wait > 0 && time_to_wait < MS_PER_FRAME) SDL_Delay(time_to_wait);
+        if (time_elapsed < MS_PER_FRAME) SDL_Delay(MS_PER_FRAME - time_elapsed);
     }
 
     destroy_render_context(&context);
