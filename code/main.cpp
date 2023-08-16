@@ -96,12 +96,13 @@ internal void line_array_connect(Line_Array *lines, size_t which, size_t next, s
     lines->data[which].prev = prev;
 }
 
-internal void line_array_reconnect(Line_Array *lines, size_t index, size_t con_index, size_t to, u32 x0, u32 y0)
+// @Note: We're describing a path going like so 'p0 -> p1 -> p2'
+internal void line_array_reconnect(Line_Array *lines, size_t p0, size_t p1, size_t p2, u32 x0, u32 y0)
 {
-    lines->data[index].prev = to;
-    lines->data[con_index].next = to;
-    lines->data[con_index].x1 = x0;
-    lines->data[con_index].y1 = y0;
+    lines->data[p2].prev = p1;
+    lines->data[p0].next = p1;
+    lines->data[p0].x1 = x0;
+    lines->data[p0].y1 = y0;
 }
 
 // @ToDo: Would be cool to get rid off floating point math here, not super important
@@ -208,11 +209,11 @@ internal void add_new_point(s32 mouse_x, s32 mouse_y, Line_Array *lines)
     if (dist_next <= dist_prev) {
         line_array_add(lines, x0, y0, lines->data[next].x0, lines->data[next].y0);
         line_array_connect(lines, lines->size - 1, next, index);
-        line_array_reconnect(lines, next, index, lines->size - 1, x0, y0);
+        line_array_reconnect(lines, index, lines->size - 1, next, x0, y0);
     } else {
         line_array_add(lines, x0, y0, lines->data[index].x0, lines->data[index].y0);
         line_array_connect(lines, lines->size - 1, index, prev);
-        line_array_reconnect(lines, index, prev, lines->size - 1, x0, y0);
+        line_array_reconnect(lines, prev, lines->size - 1, index, x0, y0);
     }
 }
 
@@ -238,7 +239,7 @@ internal void delete_point(s32 index, Line_Array *lines)
         
         lines->data[last_prev].next = index;
         lines->data[last_next].prev = index;
-        lines->data[index] = lines->data[last];
+        lines->data[index] = lines->data[last]; 
     }
     
     lines->size -= 1;
